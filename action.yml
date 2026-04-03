@@ -25,10 +25,19 @@ inputs:
     required: false
     default: ""
 
+outputs:
+  notifications-thread-ts:
+    description: "Thread timestamp for the notifications channel message. Use as thread_ts to post replies in the same thread. Empty if no message was posted or found."
+    value: ${{ steps.status-running.outputs.thread-ts || steps.status-failure.outputs.thread-ts || steps.status-success.outputs.thread-ts }}
+  releases-thread-ts:
+    description: "Thread timestamp for the releases channel message. Use as thread_ts to post replies in the same thread. Empty if no release message was handled."
+    value: ${{ steps.release-start.outputs.thread-ts || steps.release-end.outputs.thread-ts }}
+
 runs:
   using: composite
   steps:
     - name: "Status: running"
+      id: status-running
       if: ${{ inputs.slack-token != '' && inputs.status == 'running' && inputs.notifications-channel != '' }}
       shell: bash
       env:
@@ -76,7 +85,11 @@ runs:
             '{channel: $channel, ts: $ts, blocks: $blocks}')" > /dev/null
         echo "Updated failure message to running"
 
+        echo "message-ts=$FAILURE_TS" >> "$GITHUB_OUTPUT"
+        echo "thread-ts=$FAILURE_TS" >> "$GITHUB_OUTPUT"
+
     - name: "Release: start"
+      id: release-start
       if: ${{ inputs.slack-token != '' && inputs.status == 'running' && inputs.release == 'true' && inputs.releases-channel != '' }}
       shell: bash
       env:
@@ -126,7 +139,10 @@ runs:
 
         echo "Release start: $(echo "$RESPONSE" | jq -c '{ok: .ok, error: .error}')"
 
+        echo "thread-ts=$DRAFT_TS" >> "$GITHUB_OUTPUT"
+
     - name: "Status: failure"
+      id: status-failure
       if: ${{ inputs.slack-token != '' && inputs.status == 'failure' && inputs.notifications-channel != '' }}
       shell: bash
       env:
@@ -177,6 +193,8 @@ runs:
             -d "$(jq -n --arg channel "$CHANNEL" --arg ts "$FAILURE_TS" --argjson blocks "$BLOCKS" \
               '{channel: $channel, ts: $ts, blocks: $blocks}')" > /dev/null
           echo "Updated existing failure message (attempt $ATTEMPT)"
+
+          echo "thread-ts=$FAILURE_TS" >> "$GITHUB_OUTPUT"
         else
           echo "No existing failure message found, posting new one..."
           BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg url "$RUN_URL" '[
@@ -185,15 +203,19 @@ runs:
             {type: "context", elements: [{type: "mrkdwn", text: ":red_circle: Failed"}]}
           ]')
 
-          curl -s -X POST "https://slack.com/api/chat.postMessage" \
+          RESPONSE=$(curl -s -X POST "https://slack.com/api/chat.postMessage" \
             -H "Authorization: Bearer $SLACK_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$(jq -n --arg channel "$CHANNEL" --argjson blocks "$BLOCKS" \
-              '{channel: $channel, blocks: $blocks, unfurl_links: false, unfurl_media: false}')" > /dev/null
+              '{channel: $channel, blocks: $blocks, unfurl_links: false, unfurl_media: false}')")
+          MSG_TS=$(echo "$RESPONSE" | jq -r '.ts // empty')
           echo "Posted new failure message"
+
+          echo "thread-ts=$MSG_TS" >> "$GITHUB_OUTPUT"
         fi
 
     - name: "Status: success"
+      id: status-success
       if: ${{ inputs.slack-token != '' && inputs.status == 'success' && inputs.notifications-channel != '' }}
       shell: bash
       env:
@@ -241,7 +263,10 @@ runs:
             '{channel: $channel, ts: $ts, blocks: $blocks}')" > /dev/null
         echo "Updated failure message to recovered"
 
+        echo "thread-ts=$FAILURE_TS" >> "$GITHUB_OUTPUT"
+
     - name: "Release: end"
+      id: release-end
       if: ${{ inputs.slack-token != '' && (inputs.status == 'success' || inputs.status == 'failure') && inputs.release == 'true' && inputs.releases-channel != '' }}
       shell: bash
       env:
@@ -298,6 +323,8 @@ runs:
           -H "Content-Type: application/json" \
           -d "$(jq -n --arg channel "$RELEASES_CHANNEL" --arg ts "$THREAD_TS" --argjson blocks "$UPDATED_BLOCKS" \
             '{channel: $channel, ts: $ts, blocks: $blocks}')")
+
+        echo "thread-ts=$THREAD_TS" >> "$GITHUB_OUTPUT"
 
         echo "Release end: $(echo "$RESPONSE" | jq -c '{ok: .ok, error: .error}')"
 
