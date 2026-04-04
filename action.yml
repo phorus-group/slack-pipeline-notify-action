@@ -69,14 +69,16 @@ runs:
         FAILED_URL=$(echo "$FAILURE_MSG" | jq -r '[.blocks[] | select(.type == "actions") | .elements[] | select(.text.text == "View Failed Run" or .text.text == "View Latest Failed Run") | .url][0] // empty')
 
         echo "Found previous failure message, updating to running..."
-        BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg failed_url "$FAILED_URL" --arg new_url "$RUN_URL" '[
+        # Preserve any blocks with a block_id (e.g., ci-assistant status)
+        PRESERVED=$(echo "$FAILURE_MSG" | jq '[.blocks[] | select(.block_id != null)]')
+        BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg failed_url "$FAILED_URL" --arg new_url "$RUN_URL" --argjson preserved "$PRESERVED" '[
           {type: "section", text: {type: "mrkdwn", text: (":x: *Pipeline failed* in `" + $repo + "` on `" + $ref + "`")}},
           {type: "actions", elements: [
             {type: "button", text: {type: "plain_text", text: "View Failed Run"}, url: $failed_url, style: "danger"},
             {type: "button", text: {type: "plain_text", text: "View New Run"}, url: $new_url}
           ]},
           {type: "context", elements: [{type: "mrkdwn", text: ":hourglass_flowing_sand: Pipeline running again..."}]}
-        ]')
+        ] + $preserved')
 
         curl -s -X POST "https://slack.com/api/chat.update" \
           -H "Authorization: Bearer $SLACK_TOKEN" \
@@ -181,11 +183,13 @@ runs:
             ATTEMPT=2
           fi
 
-          BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg url "$RUN_URL" --arg attempt "$ATTEMPT" '[
+          # Preserve any blocks with a block_id (e.g., ci-assistant status)
+          PRESERVED=$(echo "$MSG" | jq '[.messages[0].blocks[] | select(.block_id != null)]')
+          BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg url "$RUN_URL" --arg attempt "$ATTEMPT" --argjson preserved "$PRESERVED" '[
             {type: "section", text: {type: "mrkdwn", text: (":x: *Pipeline failed* in `" + $repo + "` on `" + $ref + "`")}},
             {type: "actions", elements: [{type: "button", text: {type: "plain_text", text: "View Latest Failed Run"}, url: $url, style: "danger"}]},
             {type: "context", elements: [{type: "mrkdwn", text: (":red_circle: Failed (attempt " + $attempt + ")")}]}
-          ]')
+          ] + $preserved')
 
           curl -s -X POST "https://slack.com/api/chat.update" \
             -H "Authorization: Bearer $SLACK_TOKEN" \
@@ -247,14 +251,16 @@ runs:
         FAILED_URL=$(echo "$FAILURE_MSG" | jq -r '[.blocks[] | select(.type == "actions") | .elements[] | select(.text.text == "View Failed Run" or .text.text == "View Latest Failed Run") | .url][0] // empty')
 
         echo "Found previous failure message, marking as recovered..."
-        BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg failed_url "$FAILED_URL" --arg fix_url "$RUN_URL" '[
+        # Preserve any blocks with a block_id (e.g., ci-assistant status)
+        PRESERVED=$(echo "$FAILURE_MSG" | jq '[.blocks[] | select(.block_id != null)]')
+        BLOCKS=$(jq -n --arg repo "$REPO" --arg ref "$REF" --arg failed_url "$FAILED_URL" --arg fix_url "$RUN_URL" --argjson preserved "$PRESERVED" '[
           {type: "section", text: {type: "mrkdwn", text: (":white_check_mark: *Pipeline recovered* in `" + $repo + "` on `" + $ref + "`")}},
           {type: "actions", elements: [
             {type: "button", text: {type: "plain_text", text: "View Failed Run"}, url: $failed_url},
             {type: "button", text: {type: "plain_text", text: "View Recovery Run"}, url: $fix_url, style: "primary"}
           ]},
           {type: "context", elements: [{type: "mrkdwn", text: ":large_green_circle: Recovered"}]}
-        ]')
+        ] + $preserved')
 
         curl -s -X POST "https://slack.com/api/chat.update" \
           -H "Authorization: Bearer $SLACK_TOKEN" \
