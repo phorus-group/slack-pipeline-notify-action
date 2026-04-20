@@ -98,6 +98,7 @@ runs:
         SLACK_TOKEN: ${{ inputs.slack-token }}
         RELEASES_CHANNEL: ${{ inputs.releases-channel }}
         TAG: ${{ github.ref_name }}
+        REPO: ${{ github.repository }}
       run: |
         HISTORY=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
           "https://slack.com/api/conversations.history?channel=${RELEASES_CHANNEL}&limit=50")
@@ -107,11 +108,11 @@ runs:
           exit 0
         fi
 
-        DRAFT_TS=$(echo "$HISTORY" | jq -r --arg tag "$TAG" \
-          '[.messages[] | select(.text | contains($tag))][0].ts // empty')
+        DRAFT_TS=$(echo "$HISTORY" | jq -r --arg tag "$TAG" --arg repo "$REPO" \
+          '[.messages[] | select(.text | contains($tag) and contains($repo))][0].ts // empty')
 
         if [[ -z "$DRAFT_TS" ]]; then
-          echo "Draft message not found for tag $TAG, skipping release-start"
+          echo "Draft message not found for $REPO $TAG, skipping release-start"
           exit 0
         fi
 
@@ -280,6 +281,7 @@ runs:
         RELEASES_CHANNEL: ${{ inputs.releases-channel }}
         TAG: ${{ github.ref_name }}
         STATUS: ${{ inputs.status }}
+        REPO: ${{ github.repository }}
       run: |
         HISTORY=$(curl -s -H "Authorization: Bearer $SLACK_TOKEN" \
           "https://slack.com/api/conversations.history?channel=${RELEASES_CHANNEL}&limit=50")
@@ -289,11 +291,11 @@ runs:
           exit 0
         fi
 
-        THREAD_TS=$(echo "$HISTORY" | jq -r --arg tag "$TAG" \
-          '[.messages[] | select(.text | contains($tag))][0].ts // empty')
+        THREAD_TS=$(echo "$HISTORY" | jq -r --arg tag "$TAG" --arg repo "$REPO" \
+          '[.messages[] | select(.text | contains($tag) and contains($repo))][0].ts // empty')
 
         if [[ -z "$THREAD_TS" ]]; then
-          echo "Draft message not found for tag $TAG, skipping release-end"
+          echo "Draft message not found for $REPO $TAG, skipping release-end"
           exit 0
         fi
 
